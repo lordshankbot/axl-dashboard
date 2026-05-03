@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>AXL402 — Provider Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          ink:    { 50:'#fafaf9',100:'#f5f5f4',200:'#e7e5e4',300:'#d6d3d1',400:'#a8a29e',500:'#78716c',600:'#57534e',700:'#44403c',800:'#292524',900:'#1c1917',950:'#0c0a09' },
+          accent: { 300:'#a3e635',400:'#84cc16',500:'#65a30d',600:'#4d7c0f' },
+          warn:   { 300:'#fcd34d',400:'#facc15',500:'#eab308' },
+          alarm:  { 300:'#fda4af',400:'#fb7185',500:'#f43f5e' },
+          info:   { 300:'#a5b4fc',400:'#818cf8',500:'#6366f1' },
+        },
+        fontFamily: { mono: ['ui-monospace','SFMono-Regular','Menlo','monospace'] },
+      },
+    },
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  body {
+    background:
+      radial-gradient(at 100% 0%, rgba(132,204,22,0.06) 0, transparent 50%),
+      radial-gradient(at 0% 100%, rgba(99,102,241,0.06) 0, transparent 50%),
+      #0c0a09;
+    color: #fafaf9;
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .card { background: rgba(28,25,23,0.65); backdrop-filter: blur(8px); }
+  .chart-box { position: relative; height: 160px; }
+  .chart-box-sm { position: relative; height: 90px; }
+  .blink { animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .scroll-tail { scrollbar-width: thin; scrollbar-color: #44403c transparent; }
+  .scroll-tail::-webkit-scrollbar { width: 6px; }
+  .scroll-tail::-webkit-scrollbar-thumb { background: #44403c; border-radius: 3px; }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-[1400px] mx-auto p-6">
+
+  <header class="flex items-baseline justify-between mb-6 flex-wrap gap-3">
+    <div class="flex items-baseline gap-3">
+      <span class="text-2xl font-bold tracking-tight">AXL<span class="text-accent-400">402</span></span>
+      <span class="text-ink-400 text-sm">Provider dashboard · earnings &amp; gate health</span>
+    </div>
+    <div class="flex items-center gap-3 text-xs">
+      <label class="text-ink-500">gate</label>
+      <input id="gateUrl" type="text"
+             class="bg-ink-900 ring-1 ring-ink-800 rounded px-2 py-1 font-mono text-info-300 w-72"
+             placeholder="http://127.0.0.1:9012" />
+      <button id="connectBtn"
+              class="bg-accent-500/20 hover:bg-accent-500/30 ring-1 ring-accent-500/50 text-accent-300 rounded px-3 py-1">
+        connect
+      </button>
+      <span class="flex items-center gap-1.5">
+        <span id="statusDot" class="w-1.5 h-1.5 rounded-full bg-ink-700"></span>
+        <span id="statusText" class="text-ink-500">disconnected</span>
+      </span>
+      <button id="walletBtn"
+              class="bg-info-500/20 hover:bg-info-500/30 ring-1 ring-info-500/50 text-info-300 rounded px-3 py-1">
+        connect wallet
+      </button>
+      <span id="walletAddr" class="text-ink-500 font-mono hidden">—</span>
+    </div>
+  </header>
+
+  <!-- Top row: EARNINGS + PRICE -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+    <div class="card ring-1 ring-ink-800 rounded-2xl p-5">
+      <div class="flex items-baseline justify-between mb-3">
+        <span class="text-[11px] uppercase tracking-widest text-ink-500">cumulative earnings</span>
+        <span class="text-[10px] text-ink-600">since gate start</span>
+      </div>
+      <div class="grid grid-cols-3 gap-4 mb-3">
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-ink-500">total settled</div>
+          <div id="earnedUSDC" class="font-mono text-2xl font-bold text-accent-300">0.000000</div>
+          <div class="text-[10px] text-ink-500">USDC</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-ink-500">paid calls</div>
+          <div id="settledOK" class="font-mono text-2xl font-bold">0</div>
+          <div class="text-[10px] text-ink-500">on-chain settled</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-ink-500">earnings rate</div>
+          <div id="rateUSDC" class="font-mono text-2xl font-bold text-info-300">0.000000</div>
+          <div class="text-[10px] text-ink-500">USDC / min</div>
+        </div>
+      </div>
+      <div class="chart-box-sm"><canvas id="earningsChart"></canvas></div>
+      <div class="text-[10px] text-ink-500 mt-1">
+        cumulative USDC settled · 60 sample window · uptime
+        <span id="uptime" class="text-ink-300">0s</span>
+      </div>
+    </div>
+
+    <div class="card ring-1 ring-ink-800 rounded-2xl p-5">
+      <div class="flex items-baseline justify-between mb-3">
+        <span class="text-[11px] uppercase tracking-widest text-ink-500">current price</span>
+        <span id="priceMode" class="text-[10px] text-ink-600">—</span>
+      </div>
+      <div class="grid grid-cols-3 gap-4 mb-3">
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-ink-500">spot</div>
+          <div id="spotUSDC" class="font-mono text-2xl font-bold text-warn-300">0.000000</div>
+          <div class="text-[10px] text-ink-500">USDC / call</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-ink-500">base</div>
+          <div id="baseUSDC" class="font-mono text-2xl font-bold text-ink-300">0.000000</div>
+          <div class="text-[10px] text-ink-500">USDC / call</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-ink-500">surge ×</div>
+          <div id="surgeFactor" class="font-mono text-2xl font-bold">1.00</div>
+          <div class="text-[10px] text-ink-500">multiplier</div>
+        </div>
+      </div>
+      <div class="chart-box-sm"><canvas id="priceChart"></canvas></div>
+      <div class="text-[10px] text-ink-500 mt-1">
+        inflight <span id="inflight" class="text-ink-300">0</span>
+        · paid rate <span id="rate" class="text-ink-300">0</span>/s
+      </div>
+    </div>
+  </section>
+
+  <!-- Second row: SETTLE HEALTH + PEERS -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+    <div class="card ring-1 ring-ink-800 rounded-2xl p-5">
+      <div class="flex items-baseline justify-between mb-3">
+        <span class="text-[11px] uppercase tracking-widest text-ink-500">settle health</span>
+        <span class="text-[10px] text-ink-600">facilitator + chain</span>
+      </div>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-ink-500">pending</div>
+          <div id="pending" class="font-mono text-2xl font-bold text-warn-300">0</div>
+          <div class="text-[10px] text-ink-500">awaiting confirm</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-ink-500">failed</div>
+          <div id="failed" class="font-mono text-2xl font-bold text-alarm-400">0</div>
+          <div class="text-[10px] text-ink-500">settle errors</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-ink-500">success rate</div>
+          <div id="successRate" class="font-mono text-2xl font-bold text-accent-300">100%</div>
+          <div class="text-[10px] text-ink-500">ok / (ok+fail)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card ring-1 ring-ink-800 rounded-2xl p-5">
+      <div class="flex items-baseline justify-between mb-3">
+        <span class="text-[11px] uppercase tracking-widest text-ink-500">connected peers</span>
+        <span id="peerCount" class="text-[10px] text-ink-600">0</span>
+      </div>
+      <div id="peerList" class="space-y-1 max-h-48 overflow-y-auto scroll-tail font-mono text-xs">
+        <div class="text-ink-600">no peers yet…</div>
+      </div>
+      <div class="text-[10px] text-ink-500 mt-2">
+        ipv6 <span id="ourIPv6" class="text-ink-400 font-mono">—</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pay & Call panel: browser-wallet caller -->
+  <section class="card ring-1 ring-ink-800 rounded-2xl p-5 mb-4">
+    <div class="flex items-baseline justify-between mb-3">
+      <span class="text-[11px] uppercase tracking-widest text-ink-500">pay &amp; call this agent</span>
+      <span class="text-[10px] text-ink-600">browser wallet · EIP-3009 sign · base sepolia</span>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-ink-500 mb-1">caller node</div>
+        <input id="callerUrl" type="text"
+               class="w-full bg-ink-900 ring-1 ring-ink-800 rounded px-2 py-1 font-mono text-info-300 text-xs"
+               placeholder="http://127.0.0.1:9002" />
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-ink-500 mb-1">peer pubkey (gate)</div>
+        <input id="peerKey" type="text"
+               class="w-full bg-ink-900 ring-1 ring-ink-800 rounded px-2 py-1 font-mono text-accent-300 text-xs"
+               placeholder="auto-fills from /topology" />
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-ink-500 mb-1">service</div>
+        <input id="callService" type="text" value="echo"
+               class="w-full bg-ink-900 ring-1 ring-ink-800 rounded px-2 py-1 font-mono text-ink-200 text-xs" />
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-ink-500 mb-1">method</div>
+        <input id="callMethod" type="text" value="tools/list"
+               class="w-full bg-ink-900 ring-1 ring-ink-800 rounded px-2 py-1 font-mono text-ink-200 text-xs" />
+      </div>
+      <div class="lg:col-span-2">
+        <div class="text-[10px] uppercase tracking-wider text-ink-500 mb-1">params (JSON)</div>
+        <input id="callParams" type="text" value="{}"
+               class="w-full bg-ink-900 ring-1 ring-ink-800 rounded px-2 py-1 font-mono text-ink-200 text-xs" />
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap mb-3">
+      <button id="probeBtn"
+              class="bg-ink-800 hover:bg-ink-700 ring-1 ring-ink-700 text-ink-200 rounded px-3 py-1 text-xs">
+        probe (no pay)
+      </button>
+      <button id="payBtn"
+              class="bg-warn-500/20 hover:bg-warn-500/30 ring-1 ring-warn-500/50 text-warn-300 rounded px-3 py-1 text-xs">
+        pay &amp; call
+      </button>
+      <span id="callBusy" class="text-ink-500 text-xs hidden">working…</span>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-ink-500 mb-1">last quote</div>
+        <pre id="quoteBox" class="bg-ink-900/60 rounded p-2 text-[11px] font-mono text-ink-300 max-h-40 overflow-auto scroll-tail">—</pre>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-ink-500 mb-1">last response</div>
+        <pre id="respBox"  class="bg-ink-900/60 rounded p-2 text-[11px] font-mono text-ink-300 max-h-40 overflow-auto scroll-tail">—</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bottom: error log -->
+  <section class="card ring-1 ring-ink-800 rounded-2xl p-5">
+    <div class="flex items-baseline justify-between mb-3">
+      <span class="text-[11px] uppercase tracking-widest text-ink-500">activity log</span>
+      <span class="text-[10px] text-ink-600">polls + calls · last 20</span>
+    </div>
+    <div id="log" class="font-mono text-[11px] space-y-0.5 max-h-40 overflow-y-auto scroll-tail">
+      <div class="text-ink-600">waiting for first poll…</div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(() => {
+  const POLL_MS = 2000;
+  const HISTORY = 60;          // ~2 minutes at 2s
+  const USDC_DECIMALS = 6;
+
+  const $ = id => document.getElementById(id);
+
+  // URL params win over localStorage win over the bundled default. Lets you
+  // share a single link like
+  //   provider-dashboard.html?gate=https://abc.trycloudflare.com
+  // and have visitors land pre-configured — no copy/paste of the gate URL on
+  // each device. Caller defaults to gate (gate node also relays outbound).
+  const qs = new URLSearchParams(location.search);
+  const qsGate   = qs.get('gate');
+  const qsCaller = qs.get('caller');
+  // Bundled default — change when the public tunnel rotates, or set via
+  // ?gate=... query param. For a permanent URL, switch from `cloudflared
+  // tunnel --url` (ephemeral) to a named tunnel with DNS routing.
+  const DEFAULT_GATE = 'https://drilling-roland-villa-sessions.trycloudflare.com';
+  let baseUrl = qsGate || localStorage.getItem('axl402_gate_url') || DEFAULT_GATE;
+  $('gateUrl').value = baseUrl;
+  if (qsGate)   localStorage.setItem('axl402_gate_url', qsGate);
+  if (qsCaller) localStorage.setItem('axl402_caller_url', qsCaller);
+
+  let timer = null;
+  let stats = null;
+  let firstStatsAt = null;
+  let firstTotal = 0n;
+
+  // ── Charts ──────────────────────────────────────────────────────────────
+  const earningsData = { labels: [], values: [] };
+  const priceData    = { labels: [], values: [] };
+
+  function lineChart(canvasId, color) {
+    return new Chart($(canvasId), {
+      type: 'line',
+      data: { labels: [], datasets: [{
+        data: [], borderColor: color, backgroundColor: color + '33',
+        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+      }]},
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: {
+          x: { display: false },
+          y: { display: true, ticks: { color: '#78716c', font: { size: 9 } },
+               grid: { color: '#29252444' } },
+        },
+      },
+    });
+  }
+  const earningsChart = lineChart('earningsChart', '#a3e635');
+  const priceChart    = lineChart('priceChart',    '#fcd34d');
+
+  function pushPoint(chart, store, v) {
+    store.values.push(v);
+    if (store.values.length > HISTORY) store.values.shift();
+    chart.data.labels = store.values.map((_, i) => i);
+    chart.data.datasets[0].data = [...store.values];
+    chart.update('none');
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  // USDC has 6 decimals. Atomic strings can be larger than Number.MAX_SAFE_INTEGER
+  // (2^53), so use BigInt for the whole-units split and Number for the fraction.
+  function atomicToUSDC(atomicStr) {
+    if (!atomicStr || atomicStr === '0') return '0.000000';
+    let s;
+    try { s = BigInt(atomicStr); } catch { return '0.000000'; }
+    const div = 10n ** BigInt(USDC_DECIMALS);
+    const whole = s / div;
+    const frac  = (s % div).toString().padStart(USDC_DECIMALS, '0');
+    return whole.toString() + '.' + frac;
+  }
+  function atomicToFloat(atomicStr) {
+    // Lossy but fine for charts; real precision lives in the BigInt formatter.
+    if (!atomicStr) return 0;
+    return Number(atomicStr) / 10 ** USDC_DECIMALS;
+  }
+  function fmtDuration(secs) {
+    secs = Math.max(0, Math.floor(secs));
+    const d = Math.floor(secs / 86400); secs -= d * 86400;
+    const h = Math.floor(secs / 3600);  secs -= h * 3600;
+    const m = Math.floor(secs / 60);    secs -= m * 60;
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    if (m) return `${m}m ${secs}s`;
+    return `${secs}s`;
+  }
+  function shortKey(k) { return k ? k.slice(0, 8) + '…' + k.slice(-4) : '—'; }
+  function setStatus(ok, msg) {
+    $('statusDot').className = 'w-1.5 h-1.5 rounded-full ' +
+      (ok ? 'bg-accent-400 blink' : 'bg-alarm-400');
+    $('statusText').textContent = msg;
+    $('statusText').className = ok ? 'text-accent-300' : 'text-alarm-400';
+  }
+  function log(msg, level='info') {
+    const colors = { info: 'text-ink-500', ok: 'text-accent-300', err: 'text-alarm-400' };
+    const t = new Date().toLocaleTimeString();
+    const el = document.createElement('div');
+    el.className = colors[level] || colors.info;
+    el.textContent = `[${t}] ${msg}`;
+    const log = $('log');
+    if (log.firstChild && log.firstChild.classList?.contains('text-ink-600')) log.innerHTML = '';
+    log.prepend(el);
+    while (log.children.length > 20) log.removeChild(log.lastChild);
+  }
+
+  // ── Polling ─────────────────────────────────────────────────────────────
+  async function fetchJSON(path) {
+    const r = await fetch(baseUrl.replace(/\/$/, '') + path, { cache: 'no-store' });
+    if (!r.ok) throw new Error(path + ' → HTTP ' + r.status);
+    return r.json();
+  }
+
+  async function tick() {
+    try {
+      const [s, p, t] = await Promise.allSettled([
+        fetchJSON('/axl402/stats'),
+        fetchJSON('/axl402/price'),
+        fetchJSON('/topology'),
+      ]);
+
+      let allOk = true;
+
+      // Stats
+      if (s.status === 'fulfilled') {
+        stats = s.value;
+        const totalAtomic = stats.settled_total_atomic || '0';
+        $('earnedUSDC').textContent  = atomicToUSDC(totalAtomic);
+        $('settledOK').textContent   = stats.settled_ok_count ?? 0;
+        $('pending').textContent     = stats.pending_settles ?? 0;
+        $('failed').textContent      = stats.settled_fail_count ?? 0;
+        $('uptime').textContent      = fmtDuration(stats.uptime_seconds ?? 0);
+
+        const ok = stats.settled_ok_count ?? 0;
+        const fail = stats.settled_fail_count ?? 0;
+        const denom = ok + fail;
+        $('successRate').textContent = denom === 0 ? '100%' :
+          (Math.round((ok / denom) * 1000) / 10) + '%';
+
+        // Earnings rate: USDC/min over the time we've been watching this dashboard.
+        if (firstStatsAt === null) {
+          firstStatsAt = Date.now();
+          try { firstTotal = BigInt(totalAtomic); } catch { firstTotal = 0n; }
+        }
+        try {
+          const nowAtomic = BigInt(totalAtomic);
+          const delta     = nowAtomic - firstTotal;
+          const elapsedMin = Math.max((Date.now() - firstStatsAt) / 60000, 1/60);
+          const ratePerMin = Number(delta) / 10 ** USDC_DECIMALS / elapsedMin;
+          $('rateUSDC').textContent = ratePerMin.toFixed(6);
+        } catch {}
+
+        pushPoint(earningsChart, earningsData, atomicToFloat(totalAtomic));
+      } else {
+        allOk = false;
+        log('stats: ' + s.reason.message, 'err');
+      }
+
+      // Price
+      if (p.status === 'fulfilled') {
+        const pv = p.value;
+        $('priceMode').textContent  = (pv.mode || '—');
+        $('spotUSDC').textContent   = atomicToUSDC(pv.current_price);
+        $('baseUSDC').textContent   = atomicToUSDC(pv.base_price);
+        $('surgeFactor').textContent = (pv.surge_factor ?? 1).toFixed(2);
+        $('inflight').textContent    = pv.inflight ?? 0;
+        $('rate').textContent        = (pv.recent_paid_rate ?? 0).toFixed(2);
+        pushPoint(priceChart, priceData, atomicToFloat(pv.current_price));
+      } else {
+        allOk = false;
+        log('price: ' + p.reason.message, 'err');
+      }
+
+      // Topology
+      if (t.status === 'fulfilled') {
+        const tv = t.value;
+        $('ourIPv6').textContent = tv.our_ipv6 || '—';
+        // Auto-fill peer field with the gate's own pubkey: this dashboard
+        // points at one provider, and "pay & call" defaults to calling that
+        // same provider. User can override.
+        if (tv.our_public_key && !$('peerKey').value) {
+          $('peerKey').value = tv.our_public_key;
+        }
+        const peers = tv.peers || [];
+        $('peerCount').textContent = peers.length;
+        const list = $('peerList');
+        if (peers.length === 0) {
+          list.innerHTML = '<div class="text-ink-600">no peers yet…</div>';
+        } else {
+          list.innerHTML = peers.map(pi => `
+            <div class="flex items-center gap-2">
+              <span class="w-1 h-1 rounded-full ${pi.up ? 'bg-accent-400' : 'bg-ink-700'}"></span>
+              <span class="text-info-300">${shortKey(pi.public_key)}</span>
+              <span class="text-ink-600">${pi.inbound ? 'in ' : 'out'}</span>
+              <span class="text-ink-500 truncate">${pi.uri || ''}</span>
+            </div>
+          `).join('');
+        }
+      } else {
+        allOk = false;
+        log('topology: ' + t.reason.message, 'err');
+      }
+
+      if (allOk) setStatus(true, 'live');
+      else setStatus(false, 'partial');
+    } catch (e) {
+      setStatus(false, 'error');
+      log(e.message, 'err');
+    }
+  }
+
+  function start() {
+    baseUrl = $('gateUrl').value.trim() || 'http://127.0.0.1:9012';
+    localStorage.setItem('axl402_gate_url', baseUrl);
+    if (timer) clearInterval(timer);
+    firstStatsAt = null;
+    firstTotal = 0n;
+    earningsData.values.length = 0;
+    priceData.values.length = 0;
+    log('connecting to ' + baseUrl, 'info');
+    tick();
+    timer = setInterval(tick, POLL_MS);
+  }
+
+  $('connectBtn').addEventListener('click', start);
+  $('gateUrl').addEventListener('keydown', e => { if (e.key === 'Enter') start(); });
+  start();
+
+  // ── Wallet + Pay & Call ────────────────────────────────────────────────
+  // EIP-3009 transferWithAuthorization is just an EIP-712 signature, never a
+  // broadcast tx — MetaMask signs locally with eth_signTypedData_v4 and the
+  // facilitator does the on-chain settle. So no broadcast permissions, no
+  // gas from the user's wallet for the signature itself.
+
+  const BASE_SEPOLIA = {
+    chainIdHex: '0x14a34',          // 84532
+    chainId:    84532,
+    addParams: {
+      chainId: '0x14a34',
+      chainName: 'Base Sepolia',
+      nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 },
+      rpcUrls: ['https://sepolia.base.org'],
+      blockExplorerUrls: ['https://sepolia.basescan.org'],
+    },
+  };
+
+  let account = null;
+
+  // Restore caller URL from localStorage; default to the same node as the
+  // gate. AXL gate nodes also serve POST /axl402/{peer} as an HTTP→Yggdrasil
+  // relay, so for a single-agent deployment you only need to expose one port
+  // and use it for both. Demo splits them only to make the protocol obvious.
+  $('callerUrl').value = localStorage.getItem('axl402_caller_url') || $('gateUrl').value || DEFAULT_GATE;
+  $('callerUrl').addEventListener('change', () =>
+    localStorage.setItem('axl402_caller_url', $('callerUrl').value.trim()));
+
+  function shortAddr(a) { return a ? a.slice(0,6) + '…' + a.slice(-4) : '—'; }
+  function setBusy(b) {
+    $('callBusy').classList.toggle('hidden', !b);
+    $('probeBtn').disabled = b; $('payBtn').disabled = b;
+  }
+  function showJSON(boxId, obj) {
+    $(boxId).textContent = (typeof obj === 'string') ? obj : JSON.stringify(obj, null, 2);
+  }
+
+  // 32 random bytes → 0x-prefixed hex, EIP-3009 nonce.
+  function randomNonce() {
+    const a = new Uint8Array(32);
+    crypto.getRandomValues(a);
+    return '0x' + Array.from(a, b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  // Browser-side base64 of a UTF-8 JSON string.
+  function jsonB64(obj) {
+    const bytes = new TextEncoder().encode(JSON.stringify(obj));
+    let bin = ''; for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
+  }
+
+  async function ensureBaseSepolia() {
+    const cur = await ethereum.request({ method: 'eth_chainId' });
+    if (cur === BASE_SEPOLIA.chainIdHex) return;
+    try {
+      await ethereum.request({ method: 'wallet_switchEthereumChain',
+        params: [{ chainId: BASE_SEPOLIA.chainIdHex }] });
+    } catch (e) {
+      // 4902 = chain not added; offer to add it.
+      if (e && (e.code === 4902 || /Unrecognized chain/i.test(e.message || ''))) {
+        await ethereum.request({ method: 'wallet_addEthereumChain',
+          params: [BASE_SEPOLIA.addParams] });
+      } else { throw e; }
+    }
+  }
+
+  async function connectWallet() {
+    if (!window.ethereum) {
+      log('no window.ethereum — install MetaMask or a compatible wallet', 'err');
+      return;
+    }
+    try {
+      const accs = await ethereum.request({ method: 'eth_requestAccounts' });
+      account = accs[0];
+      await ensureBaseSepolia();
+      $('walletAddr').textContent = shortAddr(account);
+      $('walletAddr').classList.remove('hidden');
+      $('walletBtn').textContent = 'wallet ✓';
+      $('walletBtn').classList.remove('bg-info-500/20','hover:bg-info-500/30','ring-info-500/50','text-info-300');
+      $('walletBtn').classList.add('bg-accent-500/20','hover:bg-accent-500/30','ring-accent-500/50','text-accent-300');
+      log('wallet connected: ' + account, 'ok');
+
+      // Track network changes/disconnects so the badge stays honest.
+      ethereum.on?.('accountsChanged', a => {
+        account = a[0] || null;
+        $('walletAddr').textContent = shortAddr(account);
+        log('wallet account changed: ' + (account || 'disconnected'), 'info');
+      });
+      ethereum.on?.('chainChanged', cid => {
+        log('chain changed: ' + cid, cid === BASE_SEPOLIA.chainIdHex ? 'info' : 'err');
+      });
+    } catch (e) {
+      log('wallet connect failed: ' + (e.message || e), 'err');
+    }
+  }
+
+  // POST envelope to the caller node. Returns the parsed JSON.
+  async function postEnvelope(envelope) {
+    const callerUrl = $('callerUrl').value.trim().replace(/\/$/, '');
+    const peer = $('peerKey').value.trim();
+    if (!callerUrl) throw new Error('caller URL is empty');
+    if (!peer)      throw new Error('peer pubkey is empty');
+    const r = await fetch(callerUrl + '/axl402/' + peer, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(envelope),
+      cache: 'no-store',
+    });
+    const text = await r.text();
+    try { return JSON.parse(text); }
+    catch { throw new Error('caller returned non-JSON (HTTP ' + r.status + '): ' + text.slice(0,200)); }
+  }
+
+  // Build the inner mcp request from the form.
+  function buildMcpEnvelope() {
+    let params = {};
+    try { params = JSON.parse($('callParams').value || '{}'); }
+    catch (e) { throw new Error('params not valid JSON: ' + e.message); }
+    return {
+      v: 1,
+      mcp: {
+        service: $('callService').value.trim() || 'echo',
+        request: {
+          jsonrpc: '2.0', id: Date.now() % 100000,
+          method: $('callMethod').value.trim() || 'tools/list',
+          params,
+        },
+      },
+    };
+  }
+
+  async function probe() {
+    setBusy(true);
+    try {
+      const env = buildMcpEnvelope();
+      log(`probe → ${env.mcp.service}/${env.mcp.request.method}`, 'info');
+      const out = await postEnvelope(env);
+      showJSON('quoteBox', out.accepts ? out.accepts[0] : '— (no payment required)');
+      showJSON('respBox', out);
+      log(out.accepts ? `402: price ${out.accepts[0].maxAmountRequired} on ${out.accepts[0].network}`
+                      : 'probe ok (in quota or unpriced)',
+          out.accepts ? 'info' : 'ok');
+    } catch (e) { log('probe failed: ' + e.message, 'err'); }
+    finally { setBusy(false); }
+  }
+
+  // The full pay flow: probe → sign EIP-3009 → resubmit envelope with payment.
+  async function payAndCall() {
+    if (!account) { log('connect a wallet first', 'err'); return; }
+    setBusy(true);
+    try {
+      await ensureBaseSepolia();
+      const env = buildMcpEnvelope();
+      log(`probe → ${env.mcp.service}/${env.mcp.request.method}`, 'info');
+      const probeOut = await postEnvelope(env);
+
+      if (!probeOut.accepts) {
+        // Already in quota or non-gated. Show whatever we got.
+        showJSON('respBox', probeOut);
+        log('no payment required — call already returned a result', 'ok');
+        return;
+      }
+      const reqs = probeOut.accepts[0];
+      showJSON('quoteBox', reqs);
+      log(`signing EIP-3009 for ${reqs.maxAmountRequired} on ${reqs.network}`, 'info');
+
+      // EIP-712 typed data matching USDC TransferWithAuthorization.
+      const domain = {
+        name:              (reqs.extra && reqs.extra.name)    || 'USDC',
+        version:           (reqs.extra && reqs.extra.version) || '2',
+        chainId:           BASE_SEPOLIA.chainId,
+        verifyingContract: reqs.asset,
+      };
+      const authorization = {
+        from:        account,
+        to:          reqs.payTo,
+        value:       String(reqs.maxAmountRequired),
+        validAfter:  '0',
+        validBefore: String(reqs.expiresAt),
+        nonce:       randomNonce(),
+      };
+      const typedData = {
+        domain,
+        primaryType: 'TransferWithAuthorization',
+        types: {
+          EIP712Domain: [
+            { name: 'name',              type: 'string' },
+            { name: 'version',           type: 'string' },
+            { name: 'chainId',           type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' },
+          ],
+          TransferWithAuthorization: [
+            { name: 'from',        type: 'address' },
+            { name: 'to',          type: 'address' },
+            { name: 'value',       type: 'uint256' },
+            { name: 'validAfter',  type: 'uint256' },
+            { name: 'validBefore', type: 'uint256' },
+            { name: 'nonce',       type: 'bytes32' },
+          ],
+        },
+        message: authorization,
+      };
+
+      const signature = await ethereum.request({
+        method: 'eth_signTypedData_v4',
+        params: [account, JSON.stringify(typedData)],
+      });
+
+      const x402Payload = {
+        x402Version: 1,
+        scheme:      reqs.scheme,
+        network:     reqs.network,
+        payload:     { signature, authorization },
+      };
+
+      env.payment = {
+        scheme:  reqs.scheme,
+        network: reqs.network,
+        payload: jsonB64(x402Payload),
+      };
+      log('submitting payment to caller → facilitator (verify + on-chain settle)…', 'info');
+      const out = await postEnvelope(env);
+      showJSON('respBox', out);
+      if (out.ok) {
+        log(`paid call ok · txHash=${out.txHash} settleId=${out.settleId || '—'}`, 'ok');
+      } else {
+        log('paid call failed: ' + (out.error || JSON.stringify(out)), 'err');
+      }
+    } catch (e) {
+      // MetaMask user-reject is code 4001.
+      const msg = (e && e.code === 4001) ? 'signature rejected in wallet' : (e.message || String(e));
+      log('pay failed: ' + msg, 'err');
+    } finally { setBusy(false); }
+  }
+
+  $('walletBtn').addEventListener('click', connectWallet);
+  $('probeBtn').addEventListener('click', probe);
+  $('payBtn').addEventListener('click', payAndCall);
+})();
+</script>
+</body>
+</html>
