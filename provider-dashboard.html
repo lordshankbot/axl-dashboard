@@ -57,7 +57,7 @@
              placeholder="http://127.0.0.1:9012" />
       <button id="connectBtn"
               class="bg-accent-500/20 hover:bg-accent-500/30 ring-1 ring-accent-500/50 text-accent-300 rounded px-3 py-1">
-        connect
+        apply
       </button>
       <span class="flex items-center gap-1.5">
         <span id="statusDot" class="w-1.5 h-1.5 rounded-full bg-ink-700"></span>
@@ -267,7 +267,7 @@
   // Bundled default — change when the public tunnel rotates, or set via
   // ?gate=... query param. For a permanent URL, switch from `cloudflared
   // tunnel --url` (ephemeral) to a named tunnel with DNS routing.
-  const DEFAULT_GATE = 'https://thou-hitachi-earth-candle.trycloudflare.com';
+  const DEFAULT_GATE = 'https://drilling-roland-villa-sessions.trycloudflare.com';
   let baseUrl = qsGate || localStorage.getItem('axl402_gate_url') || DEFAULT_GATE;
   $('gateUrl').value = baseUrl;
   if (qsGate)   localStorage.setItem('axl402_gate_url', qsGate);
